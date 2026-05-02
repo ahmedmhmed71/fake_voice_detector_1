@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>كشف الصوت المزيف</title>
+
+<style>
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+.card {
+    background: white;
+    padding: 30px;
+    border-radius: 20px;
+    width: 350px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+button {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+button:hover {
+    background: #5a67d8;
+}
+
+#result {
+    margin-top: 15px;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.real { color: green; }
+.fake { color: red; }
+
+.loader {
+    display: none;
+    margin-top: 10px;
+}
+
+.progress-bar {
+    width: 100%;
+    background: #eee;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 15px;
+    display: none;
+}
+
+.progress {
+    height: 15px;
+    width: 0%;
+    background: green;
+    transition: 0.5s;
+}
+
+audio {
+    margin-top: 10px;
+    width: 100%;
+}
+
+.buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.record-controls {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+button {
+    width: 100%;
+}
+
+.file-upload {
+    display: inline-block;
+    background: #667eea;
+    color: white;
+    padding: 10px 15px;
+    border-radius: 10px;
+    cursor: pointer;
+    margin-bottom: 10px;
+}
+
+.file-upload:hover {
+    background: #5a67d8;
+}
+
+#fileName {
+    display: block;
+    font-size: 14px;
+    margin-top: 5px;
+    color: #555;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="card">
+    <h2>🎤 كشف الصوت المزيف</h2>
+
+```
+<label class="file-upload">
+    📁 اختر ملف صوت
+    <input type="file" id="fileInput" hidden>
+</label>
+
+<span id="fileName">لم يتم اختيار ملف</span>
+
+<br><br>
+
+<div id="recordStatus" style="margin:10px; font-weight:bold; color:red; display:none;">
+🔴 جاري التسجيل...
+</div>
+<div class="buttons">
+
+    <button onclick="upload()">📂 تحليل ملف</button>
+
+    <div class="record-controls">
+        <button onclick="startRecording()">🎤 تسجيل</button>
+        <button onclick="stopRecording()">⏹ إيقاف</button>
+    </div>
+
+    <button id="analyzeBtn" onclick="analyzeRecorded()" style="display:none;">
+        🔍 تحليل التسجيل
+    </button>
+
+</div>
+
+<audio id="recordedAudio" controls style="display:none;"></audio>
+
+<div class="loader" id="loader">⏳ جاري التحليل...</div>
+
+<audio id="audioPlayer" controls style="display:none;"></audio>
+
+<div class="progress-bar" id="progressBar">
+    <div class="progress" id="progress"></div>
+</div>
+
+<div id="result"></div>
+```
+
+</div>
+
+<script>
+async function upload() {
+    let file = document.getElementById("fileInput").files[0];
+    let resultDiv = document.getElementById("result");
+    let loader = document.getElementById("loader");
+    let progress = document.getElementById("progress");
+    let progressBar = document.getElementById("progressBar");
+    let audio = document.getElementById("audioPlayer");
+
+    if (!file) {
+        resultDiv.innerText = "⚠️ اختر ملف أولاً";
+        return;
+    }
+
+    // عرض الصوت
+    audio.src = URL.createObjectURL(file);
+    audio.style.display = "block";
+
+    resultDiv.innerText = "";
+    loader.style.display = "block";
+    progressBar.style.display = "block";
+    progress.style.width = "10%";
+
+    let formData = new FormData();
+    formData.append("file", file);
+
+    try {
+        let res = await fetch("/predict", {
+            method: "POST",
+            body: formData
+        });
+
+        progress.style.width = "80%";
+
+        let data = await res.json();
+
+        loader.style.display = "none";
+        progress.style.width = "100%";
+
+        let prob = data.confidence;
+        let percentage = Math.round(prob * 100);
+
+        if (data.label === "Fake") {
+            progress.style.background = "red";
+            resultDiv.innerHTML = `<span class="fake">❌ مزيف (${percentage}%)</span>`;
+        } else {
+    progress.style.background = "green";
+    resultDiv.innerHTML = `<span class="real">✅ حقيقي (${percentage}%)</span>`;
+}
+
+    } catch (error) {
+        loader.style.display = "none";
+        resultDiv.innerText = "❌ حدث خطأ";
+    }
+}
+
+let mediaRecorder;
+let audioChunks = [];
+
+async function startRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        // 👇 هنا بالضبط
+        document.getElementById("recordStatus").style.display = "block";
+
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+            audioChunks.push(event.data);
+        };
+
+        mediaRecorder.start();
+
+    } catch (err) {
+        alert("❌ لازم تسمح باستخدام المايك");
+    }
+}
+
+function stopRecording() {
+
+    // 👇 هنا أول سطر
+    document.getElementById("recordStatus").style.display = "none";
+
+    if (!mediaRecorder) {
+        alert("❌ اضغط تسجيل أولاً");
+        return;
+    }
+
+    mediaRecorder.stop();
+
+    mediaRecorder.onstop = async () => {
+
+    const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+    const file = new File([audioBlob], "record.webm");
+
+    // 🎧 تشغيل الصوت المسجل
+    const audioURL = URL.createObjectURL(audioBlob);
+    const audioPlayer = document.getElementById("recordedAudio");
+
+    audioPlayer.src = audioURL;
+    audioPlayer.style.display = "block";
+
+    // إرسال للتحليل
+    window.recordedFile = file;
+    
+    document.getElementById("analyzeBtn").style.display = "block";
+};
+}
+
+async function sendAudio(file) {
+    let resultDiv = document.getElementById("result");
+    let loader = document.getElementById("loader");
+
+    loader.style.display = "block";
+
+    let formData = new FormData();
+    formData.append("file", file);
+
+    let res = await fetch("/predict", {
+        method: "POST",
+        body: formData
+    });
+
+    let data = await res.json();
+
+    loader.style.display = "none";
+
+    let prob = data.confidence;
+    let percentage = Math.round(prob * 100);
+
+    if (data.label === "Fake") {
+        resultDiv.innerHTML = `❌ مزيف (${percentage}%)`;
+    } else {
+        resultDiv.innerHTML = `✅ حقيقي (${percentage}%)`;
+    }
+}
+
+async function analyzeRecorded() {
+    if (!window.recordedFile) {
+        alert("❌ سجل صوت أولاً");
+        return;
+    }
+
+    sendAudio(window.recordedFile);
+}
+
+document.getElementById("fileInput").addEventListener("change", function() {
+    let file = this.files[0];
+    document.getElementById("fileName").innerText = file ? file.name : "لم يتم اختيار ملف";
+});
+
+</script>
+
+</body>
+</html>
+
